@@ -1,0 +1,200 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --app-bg-color: #0A0A0A;
+    --brand-primary: #9f8bc9;
+    --brand-success: #00C26E;
+    --brand-info: #627EEA;
+    --brand-warning: #F7931A;
+    --brand-danger: #FF4F4F;
+    --text-primary: #FFFFFF;
+    --text-secondary: rgba(255, 255, 255, 0.85);
+    --text-tertiary: rgba(255, 255, 255, 0.32);
+    --card-bg: #121212;
+    --card-border: rgba(255, 255, 255, 0.06);
+    --card-hover: rgba(255, 255, 255, 0.1);
+    --up-color: #00C26E;
+    --down-color: #FF4F4F;
+  }
+
+  .light {
+    --app-bg-color: #F5F5F5;
+    --text-primary: #1A1A1A;
+    --text-secondary: rgba(26, 26, 26, 0.85);
+    --text-tertiary: rgba(26, 26, 26, 0.32);
+    --card-bg: #FFFFFF;
+    --card-border: rgba(0, 0, 0, 0.06);
+    --card-hover: rgba(0, 0, 0, 0.1);
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: var(--app-bg-color);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .market-card {
+    @apply bg-[var(--card-bg)] rounded-2xl shadow-sm p-4 sm:p-6;
+  }
+
+  .market-up {
+    @apply text-[var(--brand-success)] font-bold px-1 py-0.5 bg-[rgba(0,194,110,0.1)] rounded;
+  }
+
+  .market-down {
+    @apply text-[var(--brand-danger)] font-bold px-1 py-0.5 bg-[rgba(255,79,79,0.1)] rounded;
+  }
+
+  .market-neutral {
+    @apply text-[var(--text-secondary)] font-bold px-1 py-0.5 bg-[rgba(255,255,255,0.1)] dark:bg-[rgba(255,255,255,0.05)] rounded;
+  }
+
+  .date-text {
+    @apply text-[var(--text-tertiary)] text-sm font-medium;
+  }
+
+  .citation-link {
+    @apply relative inline-flex items-center text-[var(--brand-info)] text-[0.75em] align-super font-medium mx-0.5 no-underline;
+  }
+
+  .citation-link::before {
+    content: '';
+    @apply absolute inset-0 rounded opacity-0 transition-opacity duration-200;
+    background-color: rgba(98, 126, 234, 0.1);
+    padding: 0.125rem 0.25rem;
+    margin: -0.125rem -0.25rem;
+  }
+
+  .citation-link:hover::before {
+    @apply opacity-100;
+  }
+
+  .daily-summary {
+    @apply flex items-center gap-2 px-2 py-1 rounded-full text-[var(--text-tertiary)] text-xs font-bold;
+    background-color: rgba(255, 255, 255, 0.04);
+  }
+
+  .content-box {
+    @apply p-4 sm:p-8 rounded-xl;
+    background-color: rgba(0, 0, 0, 0.01);
+    border: 1px solid var(--card-border);
+  }
+
+  .content-text {
+    @apply text-[var(--text-secondary)] text-base leading-relaxed;
+    letter-spacing: 0.01em;
+    line-height: 1.7;
+    font-variation-settings: 'wght' 500;
+  }
+
+  .content-text p {
+    @apply mb-6 last:mb-0;
+  }
+
+  .content-text p + p {
+    @apply mt-4;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -1000px 0;
+    }
+    100% {
+      background-position: 1000px 0;
+    }
+  }
+
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--card-bg) 0%,
+      var(--card-hover) 50%,
+      var(--card-bg) 100%
+    );
+    background-size: 1000px 100%;
+    animation: shimmer 2s infinite linear;
+  }
+
+  .skeleton-text {
+    @apply h-4 rounded-full mb-3 last:mb-0;
+    animation: shimmer 2s infinite linear;
+    background: linear-gradient(
+      90deg,
+      var(--card-bg) 0%,
+      var(--card-hover) 50%,
+      var(--card-bg) 100%
+    );
+    background-size: 1000px 100%;
+  }
+
+  .sources-container {
+    @apply relative;
+  }
+
+  .source-link {
+    @apply relative flex items-center justify-center p-2 rounded-lg transition-all duration-200 no-underline;
+  }
+
+  .source-link:hover {
+    background-color: var(--card-hover);
+  }
+
+  .source-tooltip {
+    @apply invisible opacity-0 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs whitespace-nowrap rounded shadow-lg z-10 pointer-events-none;
+    background-color: var(--card-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--card-border);
+    transition: all 0.2s ease;
+  }
+
+  .source-link:hover .source-tooltip {
+    @apply visible opacity-100;
+  }
+
+  .content-box > div:not(:last-child) {
+    @apply mb-8;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+    letter-spacing: -0.02em;
+  }
+
+  .crypto-token {
+    @apply inline-flex items-center gap-0.5 rounded font-medium;
+    padding: 0 0.25rem;
+    line-height: inherit;
+    vertical-align: baseline;
+    transition: all 0.2s ease;
+  }
+
+  .crypto-token:hover {
+    filter: brightness(1.1);
+  }
+
+  .crypto-token img {
+    @apply w-3.5 h-3.5 object-contain;
+    margin-top: -0.125rem;
+    margin-bottom: -0.125rem;
+  }
+
+  /* Add theme detection */
+  :root {
+    --is-dark-theme: 1;
+  }
+
+  .light {
+    --is-dark-theme: 0;
+  }
+}
