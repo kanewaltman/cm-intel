@@ -1,0 +1,4 @@
+# Proxy API requests to Perplexity
+/api/chat/completions https://api.perplexity.ai/chat/completions 200
+# SPA fallback
+/* /index.html 200 

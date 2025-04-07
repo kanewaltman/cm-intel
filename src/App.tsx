@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Newspaper, RefreshCcw, AlertCircle, TrendingUp, Link, Moon, Sun, MoreVertical, Sparkles, ChevronDown } from 'lucide-react';
 import { CryptoToken } from './components/CryptoToken';
-import { supabase } from './lib/supabase';
-import { format, parseISO, isToday, startOfDay, isSameDay } from 'date-fns';
+import { supabase, fetchWithErrorHandling } from './lib/supabase';
+import { format, parseISO, isToday, startOfDay, isSameDay, addDays } from 'date-fns';
 import type { Database } from './lib/database.types';
 import type { Citation } from './lib/database.types';
 import { config } from './lib/config';
@@ -102,17 +102,29 @@ function App() {
 
   const checkTodaysSummary = async (): Promise<NewsDigest | null> => {
     try {
+      // Get today's date and tomorrow's date to create a proper range
       const today = startOfDay(new Date());
+      const tomorrow = addDays(today, 1);
       
-      const { data, error } = await supabase
+      console.log('Checking for summaries between:', {
+        fromDate: today.toISOString(),
+        toDate: tomorrow.toISOString(),
+        environment: import.meta.env.MODE // Log current environment
+      });
+      
+      // Create query with sufficient filters to handle both environments
+      const query = supabase
         .from('daily_summaries')
         .select('*')
         .gte('timestamp', today.toISOString())
+        .lt('timestamp', tomorrow.toISOString())
         .order('timestamp', { ascending: false })
-        .limit(1)
-        .single();
-
+        .limit(1);
+      
+      const { data, error } = await query;
+      
       if (error) {
+        console.error('Supabase query error:', error);
         if (error.code === 'PGRST116') {
           // No data found for today
           return null;
@@ -120,7 +132,13 @@ function App() {
         throw error;
       }
 
-      return data;
+      if (data && data.length > 0) {
+        console.log('Found today\'s summary:', data[0].timestamp);
+        return data[0];
+      }
+      
+      console.log('No summary found for today');
+      return null;
     } catch (err) {
       console.error('Error checking today\'s summary:', err);
       return null;
@@ -151,17 +169,24 @@ function App() {
       // Get today's start timestamp
       const today = startOfDay(new Date()).toISOString();
       
-      const { data, error } = await supabase
+      console.log('Fetching historical digests before:', today);
+      
+      const query = supabase
         .from('daily_summaries')
         .select('*')
         .lt('timestamp', today) // Only fetch summaries before today
         .order('timestamp', { ascending: false })
         .limit(config.MAX_HISTORICAL_SUMMARIES);
+      
+      const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching historical digests:', error);
+        throw error;
+      }
 
       // Process and ensure each digest has a valid citations array
-      const processedDigests = (data || []).map(digest => {
+      const processedDigests = (data || []).map((digest: NewsDigest) => {
         // Ensure citations is an array
         if (!digest.citations || !Array.isArray(digest.citations)) {
           digest.citations = [];
@@ -192,19 +217,20 @@ function App() {
     try {
       console.log("Storing digest in database:", {
         content: digest.content.substring(0, 50) + "...",
-        citations: digest.citations,
-        hasCitations: digest.citations && digest.citations.length > 0,
-        citationsCount: digest.citations ? digest.citations.length : 0,
-        timestamp: digest.timestamp
+        citations: digest.citations?.length || 0,
+        timestamp: digest.timestamp,
+        environment: import.meta.env.MODE
       });
       
-      const { error } = await supabase
+      const query = supabase
         .from('daily_summaries')
         .insert([{
           content: digest.content,
           citations: digest.citations,
           timestamp: digest.timestamp
         }]);
+      
+      const { error } = await query;
 
       if (error) {
         console.error("Error storing digest:", error);
@@ -652,14 +678,17 @@ function App() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
+      // Use Netlify Function in production, local proxy in development
+      const apiEndpoint = import.meta.env.PROD 
+        ? '/.netlify/functions/proxy-perplexity'
+        : '/api/chat/completions';
+
       const response = await fetch(
-        'https://api.perplexity.ai/chat/completions',
+        apiEndpoint,
         {
           method: 'POST',
           headers: {
-            Accept: 'application/json',
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.REACT_APP_PERPLEXITY_API_KEY}`,
           },
           body: JSON.stringify({
             model: 'sonar-pro',
@@ -677,13 +706,24 @@ function App() {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error('API Response:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        });
+        
+        if (response.status === 401) {
+          throw new Error('API Key is invalid or not properly configured. Please check your environment variables.');
+        }
+        
+        throw new Error(`API Error: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
       }
 
       const data = await response.json();
       
-      // Log the raw Perplexity API response
-      console.info('Raw Perplexity API Response:', data);
+      // Log the raw API response
+      console.info('Raw API Response:', data);
       
       if (!data?.choices?.[0]?.message?.content) {
         throw new Error('Invalid response format from API');
