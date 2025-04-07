@@ -171,12 +171,34 @@ function App() {
       
       console.log('Fetching historical digests before:', today);
       
+      // Get the most recent summary first
+      const latestQuery = supabase
+        .from('daily_summaries')
+        .select('id')
+        .order('timestamp', { ascending: false })
+        .limit(1);
+      
+      const { data: latestData, error: latestError } = await latestQuery;
+      
+      if (latestError) {
+        console.error('Error fetching latest digest ID:', latestError);
+        throw latestError;
+      }
+      
+      // Get ID of most recent summary to exclude
+      const latestId = latestData && latestData.length > 0 ? latestData[0].id : null;
+      
+      // Main query to fetch historical digests, excluding only the most recent one
       const query = supabase
         .from('daily_summaries')
         .select('*')
-        .lt('timestamp', today) // Only fetch summaries before today
         .order('timestamp', { ascending: false })
         .limit(config.MAX_HISTORICAL_SUMMARIES);
+      
+      // If we have a latest ID, exclude it from results
+      if (latestId) {
+        query.neq('id', latestId);
+      }
       
       const { data, error } = await query;
 
