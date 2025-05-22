@@ -10,8 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ai-sdk/perplexity": "^1.1.9",
     "@netlify/functions": "^2.6.0",
     "@supabase/supabase-js": "^2.39.8",
+    "ai": "^4.3.16",
     "date-fns": "^3.6.0",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",

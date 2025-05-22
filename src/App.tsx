@@ -6,6 +6,8 @@ import { format, parseISO, isToday, startOfDay, isSameDay, addDays } from 'date-
 import type { Database } from './lib/database.types';
 import type { Citation } from './lib/database.types';
 import { config } from './lib/config';
+import { perplexity } from '@ai-sdk/perplexity';
+import { generateText } from 'ai';
 
 type NewsDigest = {
   content: string;
@@ -296,11 +298,12 @@ function App() {
     }
   };
 
-  const processApiResponse = async (content: string): Promise<NewsDigest> => {
+  const processApiResponse = async (content: string, apiSources: any[] = []): Promise<NewsDigest> => {
     const citations: Citation[] = [];
     let processedContent = content;
     
     console.log("Original API response content:", content);
+    console.log("API provided sources:", apiSources);
     
     // Extract explicit sentiment if present
     const sentimentMatch = content.match(/^SENTIMENT:\s*(BULLISH|BEARISH|NEUTRAL)/i);
@@ -327,118 +330,133 @@ function App() {
     console.log("Found citation references:", citationReferences);
     console.log("Unique citation numbers:", uniqueCitationNumbers);
 
-    // Look for a Sources section at the end in multiple formats
-    // Format 1: "Sources:" with a list of URLs
-    const sourcesBlockMatch = content.match(/(?:\*\*)?Sources(?:\*\*)?\s*(?::|$)([\s\S]+)?$/i);
-    
-    if (sourcesBlockMatch && sourcesBlockMatch[1]) {
-      console.log("Found Sources block:", sourcesBlockMatch[1]);
+    // If we have API sources, use them first (preferred method)
+    if (apiSources && apiSources.length > 0) {
+      console.log("Using API provided sources");
       
-      // Try to match numbered URLs in the sources section
-      // Pattern: 1. http://example.com or [1] http://example.com or 1: http://example.com
-      const sourcesLines = sourcesBlockMatch[1].split('\n');
-      
-      for (const line of sourcesLines) {
-        // Match patterns like: "1. https://example.com" or "[1] https://example.com" or "1: https://example.com"
-        const sourceMatch = line.match(/(?:^|\s)(?:\[?(\d+)\]?\.?:?\s+)(https?:\/\/[^\s]+)/i);
+      // Process sources from the AI SDK
+      for (let i = 0; i < apiSources.length; i++) {
+        const source = apiSources[i];
+        // Add 1 to index because citation numbers typically start at 1
+        const number = i + 1;
+        const url = source.url || "";
+        const title = source.title || getDomainName(url);
+        const favicon = await getFavicon(url);
         
-        if (sourceMatch) {
-          const number = parseInt(sourceMatch[1], 10);
-          const url = sourceMatch[2].trim();
+        citations.push({
+          number,
+          title,
+          url,
+          isCited: true,
+          favicon
+        });
+      }
+    } else {
+      // Fall back to previous extraction methods
+      
+      // Look for a Sources section at the end in multiple formats
+      // Format 1: "Sources:" with a list of URLs
+      const sourcesBlockMatch = content.match(/(?:\*\*)?Sources(?:\*\*)?\s*(?::|$)([\s\S]+)?$/i);
+      
+      if (sourcesBlockMatch && sourcesBlockMatch[1]) {
+        console.log("Found Sources block:", sourcesBlockMatch[1]);
+        
+        // Try to match numbered URLs in the sources section
+        // Pattern: 1. http://example.com or [1] http://example.com or 1: http://example.com
+        const sourcesLines = sourcesBlockMatch[1].split('\n');
+        
+        for (const line of sourcesLines) {
+          // Match patterns like: "1. https://example.com" or "[1] https://example.com" or "1: https://example.com"
+          const sourceMatch = line.match(/(?:^|\s)(?:\[?(\d+)\]?\.?:?\s+)(https?:\/\/[^\s]+)/i);
           
-          console.log(`Found source #${number}: ${url}`);
+          if (sourceMatch) {
+            const number = parseInt(sourceMatch[1], 10);
+            const url = sourceMatch[2].trim();
+            
+            console.log(`Found source #${number}: ${url}`);
+            
+            if (url) {
+              const favicon = await getFavicon(url);
+              citations.push({
+                number,
+                title: getDomainName(url),
+                url,
+                isCited: true,
+                favicon
+              });
+            }
+          }
+        }
+        
+        // Remove the Sources section from the content
+        processedContent = processedContent.replace(/(?:\*\*)?Sources(?:\*\*)?\s*(?::|$)[\s\S]+$/i, '').trim();
+      }
+      
+      // If we still haven't found any citations, look for sources format with "Sources:" section
+      if (citations.length === 0) {
+        const sourcesMatch = processedContent.match(/Sources?:?\s*([\s\S]+)$/i);
+        if (sourcesMatch) {
+          // Traditional format with Sources section
+          const sourcesSection = sourcesMatch[1];
+          const citationRegex = /\[(\d+)\]\s*([^[]+?)(?=\s*(?:\[\d+\]|$))/g;
+          let match;
+          
+          while ((match = citationRegex.exec(sourcesSection)) !== null) {
+            const number = parseInt(match[1], 10);
+            const citationText = match[2].trim();
+            const urlMatch = citationText.match(/(?:(?:https?:)?\/\/)?[\w-]+(?:\.[\w-]+)+[^\s)]+/);
+            const url = urlMatch ? urlMatch[0] : '';
+            const title = citationText
+              .replace(url, '')
+              .replace(/^[-:\s]+|[-:\s]+$/g, '')
+              .trim();
+
+            if (url) {
+              const favicon = await getFavicon(url.startsWith('http') ? url : `https://${url}`);
+              citations.push({
+                number,
+                title: title || getDomainName(url),
+                url: url.startsWith('http') ? url : `https://${url}`,
+                isCited: true,
+                favicon
+              });
+            }
+          }
+
+          processedContent = processedContent.replace(/Sources?:?\s*[\s\S]+$/, '').trim();
+        }
+      }
+      
+      // If we still haven't found any citations, try inline JSON-like format
+      if (citations.length === 0) {
+        // New format - try to extract citations from inline references like "[url":"https://...]"
+        const inlineCitationRegex = /\[\s*(?:"url"\s*:\s*"([^"]+)"|'url'\s*:\s*'([^']+)')\s*\]/g;
+        let inlineMatch;
+        let citationNumber = 1;
+        
+        while ((inlineMatch = inlineCitationRegex.exec(processedContent)) !== null) {
+          const url = inlineMatch[1] || inlineMatch[2];
           
           if (url) {
             const favicon = await getFavicon(url);
             citations.push({
-              number,
+              number: citationNumber++,
               title: getDomainName(url),
-              url,
+              url: url,
               isCited: true,
               favicon
             });
           }
         }
-      }
-      
-      // Remove the Sources section from the content
-      processedContent = processedContent.replace(/(?:\*\*)?Sources(?:\*\*)?\s*(?::|$)[\s\S]+$/i, '').trim();
-    }
-    
-    // If we still haven't found any citations, look for sources format with "Sources:" section
-    if (citations.length === 0) {
-      const sourcesMatch = processedContent.match(/Sources?:?\s*([\s\S]+)$/i);
-      if (sourcesMatch) {
-        // Traditional format with Sources section
-        const sourcesSection = sourcesMatch[1];
-        const citationRegex = /\[(\d+)\]\s*([^[]+?)(?=\s*(?:\[\d+\]|$))/g;
-        let match;
         
-        while ((match = citationRegex.exec(sourcesSection)) !== null) {
-          const number = parseInt(match[1], 10);
-          const citationText = match[2].trim();
-          const urlMatch = citationText.match(/(?:(?:https?:)?\/\/)?[\w-]+(?:\.[\w-]+)+[^\s)]+/);
-          const url = urlMatch ? urlMatch[0] : '';
-          const title = citationText
-            .replace(url, '')
-            .replace(/^[-:\s]+|[-:\s]+$/g, '')
-            .trim();
-
-          if (url) {
-            const favicon = await getFavicon(url.startsWith('http') ? url : `https://${url}`);
-            citations.push({
-              number,
-              title: title || getDomainName(url),
-              url: url.startsWith('http') ? url : `https://${url}`,
-              isCited: true,
-              favicon
-            });
-          }
-        }
-
-        processedContent = processedContent.replace(/Sources?:?\s*[\s\S]+$/, '').trim();
+        // Remove the inline citation references from the content
+        processedContent = processedContent.replace(/\[\s*(?:"url"\s*:\s*"[^"]+"|'url'\s*:\s*'[^']+')\s*\]/g, '');
       }
     }
-    
-    // If we still haven't found any citations, try inline JSON-like format
-    if (citations.length === 0) {
-      // New format - try to extract citations from inline references like "[url":"https://...]"
-      const inlineCitationRegex = /\[\s*(?:"url"\s*:\s*"([^"]+)"|'url'\s*:\s*'([^']+)')\s*\]/g;
-      let inlineMatch;
-      let citationNumber = 1;
-      
-      while ((inlineMatch = inlineCitationRegex.exec(processedContent)) !== null) {
-        const url = inlineMatch[1] || inlineMatch[2];
-        
-        if (url) {
-          const favicon = await getFavicon(url);
-          citations.push({
-            number: citationNumber++,
-            title: getDomainName(url),
-            url: url,
-            isCited: true,
-            favicon
-          });
-        }
-      }
-      
-      // Remove the inline citation references from the content
-      processedContent = processedContent.replace(/\[\s*(?:"url"\s*:\s*"[^"]+"|'url'\s*:\s*'[^']+')\s*\]/g, '');
-    }
-    
-    // If we still have no citations but found citation references, create placeholder citations
+
+    // If we still have no citations but found citation references, log this issue
     if (citations.length === 0 && uniqueCitationNumbers.length > 0) {
-      console.log("Creating placeholder citations for references:", uniqueCitationNumbers);
-      
-      for (const num of uniqueCitationNumbers) {
-        citations.push({
-          number: num,
-          title: `Source ${num}`,
-          url: `#source-${num}`, // Use a unique URL so they're not filtered out
-          isCited: true,
-          favicon: ''
-        });
-      }
+      console.error("Found citation references but couldn't extract actual sources", uniqueCitationNumbers);
     }
     
     console.log("Extracted citations:", citations);
@@ -454,7 +472,7 @@ function App() {
 
     const digest: NewsDigest = {
       content: processedContent,
-      citations: citations, // Don't filter out placeholder citations
+      citations: citations,
       timestamp: new Date().toISOString(),
       explicitSentiment
     };
@@ -697,67 +715,96 @@ function App() {
         }
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-      // Use Netlify Function in production, local proxy in development
-      const apiEndpoint = import.meta.env.PROD 
-        ? '/.netlify/functions/proxy-perplexity'
-        : '/api/chat/completions';
-
-      const response = await fetch(
-        apiEndpoint,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'sonar-pro',
-            messages: [
-              {
-                role: 'user',
-                content: 'Provide a unformatted concise but detailed analysis of the most important current cryptocurrency market developments with sources, including major price movements, significant news, and prevailing market sentiment. Only use information that is up-to-date as of the time of this request. Focus on actionable insights for traders. Include citations for your sources and number them sequentially. Format the response in clear paragraphs with proper spacing. For each citation, include the source URL. End your response with a Sources section that lists all citations with their URLs. Prioritize clarity, urgency, and immediate tradable insights. Use a sharp, direct voice that cuts through noise, think financial journalism meets street-smart trading floor. Avoid academic language; speak directly to traders bottom-line interests. Highlight potential opportunities and risks in a way that feels like insider knowledge, not generic reporting. Do not refer to the daily market as “todays market”—refer to it as “the market.” Only use information that is current as of the time of this request; do not include outdated or speculative data.'
-              }
-            ]
-          }),
-          signal: controller.signal,
-        }
-      );
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error');
-        console.error('API Response:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorText
+      try {
+        // Use AI SDK to get text and sources
+        const prompt = 'Provide a unformatted concise but detailed analysis of the most important current cryptocurrency market developments with sources, including major price movements, significant news, and prevailing market sentiment. Only use information that is up-to-date as of the time of this request. Focus on actionable insights for traders. Include citations for your sources and number them sequentially. Format the response in clear paragraphs with proper spacing. For each citation, include the source URL. End your response with a Sources section that lists all citations with their URLs. Prioritize clarity, urgency, and immediate tradable insights. Use a sharp, direct voice that cuts through noise, think financial journalism meets street-smart trading floor. Avoid academic language; speak directly to traders bottom-line interests. Highlight potential opportunities and risks in a way that feels like insider knowledge, not generic reporting. Do not refer to the daily market as "todays market"—refer to it as "the market." Only use information that is current as of the time of this request; do not include outdated or speculative data.';
+        
+        console.log("Using AI SDK to generate text");
+        const { text: generatedText, sources: apiSources } = await generateText({
+          model: perplexity('sonar-pro'),
+          prompt: prompt,
+          temperature: 0.7,
         });
+
+        console.log("Received response from AI SDK");
+        console.log("Sources from AI SDK:", apiSources);
         
-        if (response.status === 401) {
-          throw new Error('API Key is invalid or not properly configured. Please check your environment variables.');
+        // Process the response using our helper function
+        const digest = await processApiResponse(generatedText, apiSources);
+        
+        setNewsDigest(digest);
+        setCachedData(digest);
+        await storeSummary(digest);
+        setMarketSentiment(analyzeMarketSentiment(digest.content));
+        setRetryCount(0);
+        setUsingFallback(false);
+      } catch (aiSdkError) {
+        // If AI SDK fails, fall back to direct API call
+        console.error('AI SDK Error:', aiSdkError);
+        console.log('Falling back to direct API call');
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+        // Use Netlify Function in production, local proxy in development
+        const apiEndpoint = import.meta.env.PROD 
+          ? '/.netlify/functions/proxy-perplexity'
+          : '/api/chat/completions';
+
+        const response = await fetch(
+          apiEndpoint,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'sonar-pro',
+              messages: [
+                {
+                  role: 'user',
+                  content: 'Provide a unformatted concise but detailed analysis of the most important current cryptocurrency market developments with sources, including major price movements, significant news, and prevailing market sentiment. Only use information that is up-to-date as of the time of this request. Focus on actionable insights for traders. Include citations for your sources and number them sequentially. Format the response in clear paragraphs with proper spacing. For each citation, include the source URL. End your response with a Sources section that lists all citations with their URLs. Prioritize clarity, urgency, and immediate tradable insights. Use a sharp, direct voice that cuts through noise, think financial journalism meets street-smart trading floor. Avoid academic language; speak directly to traders bottom-line interests. Highlight potential opportunities and risks in a way that feels like insider knowledge, not generic reporting. Do not refer to the daily market as “todays market”—refer to it as “the market.” Only use information that is current as of the time of this request; do not include outdated or speculative data.'
+                }
+              ]
+            }),
+            signal: controller.signal,
+          }
+        );
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Unknown error');
+          console.error('API Response:', {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorText
+          });
+          
+          if (response.status === 401) {
+            throw new Error('API Key is invalid or not properly configured. Please check your environment variables.');
+          }
+          
+          throw new Error(`API Error: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
         }
+
+        const data = await response.json();
         
-        throw new Error(`API Error: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
-      }
+        // Log the raw API response
+        console.info('Raw API Response:', data);
+        
+        if (!data?.choices?.[0]?.message?.content) {
+          throw new Error('Invalid response format from API');
+        }
 
-      const data = await response.json();
-      
-      // Log the raw API response
-      console.info('Raw API Response:', data);
-      
-      if (!data?.choices?.[0]?.message?.content) {
-        throw new Error('Invalid response format from API');
+        const digest = await processApiResponse(data.choices[0].message.content);
+        setNewsDigest(digest);
+        setCachedData(digest);
+        await storeSummary(digest);
+        setMarketSentiment(analyzeMarketSentiment(digest.content));
+        setRetryCount(0);
+        setUsingFallback(false);
       }
-
-      const digest = await processApiResponse(data.choices[0].message.content);
-      setNewsDigest(digest);
-      setCachedData(digest);
-      await storeSummary(digest);
-      setMarketSentiment(analyzeMarketSentiment(digest.content));
-      setRetryCount(0);
-      setUsingFallback(false);
     } catch (err) {
       console.error('API Error:', err);
       
