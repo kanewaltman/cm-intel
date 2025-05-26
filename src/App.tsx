@@ -6,8 +6,24 @@ import { format, parseISO, isToday, startOfDay, isSameDay, addDays } from 'date-
 import type { Database } from './lib/database.types';
 import type { Citation } from './lib/database.types';
 import { config } from './lib/config';
-import { perplexity } from '@ai-sdk/perplexity';
+import { createPerplexity } from '@ai-sdk/perplexity';
 import { generateText } from 'ai';
+
+// Domain filtering configuration for Perplexity API
+const DOMAIN_FILTER = [
+  // Whitelisted crypto news sources
+  "coinmetro.com",
+  "reuters.com",
+  "coingecko.com",
+  "coindesk.com",
+  "cointelegraph.com",
+  "x.com",
+  "cnbc.com",
+  "fortune.com",
+  "reddit.com",
+  "finance.yahoo.com"
+  ,
+];
 
 type NewsDigest = {
   content: string;
@@ -717,13 +733,30 @@ function App() {
 
       try {
         // Use AI SDK to get text and sources
-        const prompt = 'Provide a unformatted concise but detailed analysis of the most important current cryptocurrency market developments with sources, including major price movements, significant news, and prevailing market sentiment. Only use information that is up-to-date as of the time of this request. Focus on actionable insights for traders. Include citations for your sources and number them sequentially. Format the response in clear paragraphs with proper spacing. For each citation, include the source URL. End your response with a Sources section that lists all citations with their URLs. Prioritize clarity, urgency, and immediate tradable insights. Use a sharp, direct voice that cuts through noise, think financial journalism meets street-smart trading floor. Avoid academic language; speak directly to traders bottom-line interests. Highlight potential opportunities and risks in a way that feels like insider knowledge, not generic reporting. Do not refer to the daily market as "todays market"—refer to it as "the market." Only use information that is current as of the time of this request; do not include outdated or speculative data.';
+        const prompt = 'Provide a unformatted concise but detailed analysis of todays most recent cryptocurrency market developments focusing on Solana Ethereum Bitcoin Polkadot Hedera Dogecoin Coinmetro token and other major tokens from multiple sources, including price movements only if major, significant news, and prevailing market sentiment with an emphasis on foresight. Only use information that is up-to-date as of the time of this request. Focus on actionable insights for traders. Sources should be diverse and not from one source. Include citations for your sources and number them sequentially. Format the response in clear paragraphs with proper spacing. Prioritize clarity, urgency, and immediate tradable insights. Use a sharp, direct voice that cuts through noise, think financial journalism meets street-smart trading floor. Avoid academic language; speak directly to traders bottom-line interests. Highlight potential opportunities and risks in a way that feels like insider knowledge, not generic reporting. Do not refer to the daily market as “todays market”—refer to it as “the market.” Only use information that is current as of the time of this request; do not include outdated or speculative data.';
         
         console.log("Using AI SDK to generate text");
+        
+        // Get the API key from environment variables
+        const apiKey = import.meta.env.VITE_PERPLEXITY_API_KEY;
+        if (!apiKey) {
+          throw new Error('VITE_PERPLEXITY_API_KEY environment variable is not set');
+        }
+        
+        // Create Perplexity provider instance with API key
+        const perplexity = createPerplexity({
+          apiKey: apiKey
+        });
+        
         const { text: generatedText, sources: apiSources } = await generateText({
           model: perplexity('sonar-pro'),
           prompt: prompt,
           temperature: 0.7,
+          experimental_providerMetadata: {
+            perplexity: {
+              search_domain_filter: DOMAIN_FILTER
+            }
+          }
         });
 
         console.log("Received response from AI SDK");
@@ -763,9 +796,10 @@ function App() {
               messages: [
                 {
                   role: 'user',
-                  content: 'Provide a unformatted concise but detailed analysis of the most important current cryptocurrency market developments with sources, including major price movements, significant news, and prevailing market sentiment. Only use information that is up-to-date as of the time of this request. Focus on actionable insights for traders. Include citations for your sources and number them sequentially. Format the response in clear paragraphs with proper spacing. For each citation, include the source URL. End your response with a Sources section that lists all citations with their URLs. Prioritize clarity, urgency, and immediate tradable insights. Use a sharp, direct voice that cuts through noise, think financial journalism meets street-smart trading floor. Avoid academic language; speak directly to traders bottom-line interests. Highlight potential opportunities and risks in a way that feels like insider knowledge, not generic reporting. Do not refer to the daily market as “todays market”—refer to it as “the market.” Only use information that is current as of the time of this request; do not include outdated or speculative data.'
+                  content: 'Provide a unformatted concise but detailed analysis of todays most recent cryptocurrency market developments focusing on Solana Ethereum Bitcoin Polkadot Hedera Dogecoin Coinmetro token and other major tokens from multiple sources, including price movements only if major, significant news, and prevailing market sentiment with an emphasis on foresight. Only use information that is up-to-date as of the time of this request. Focus on actionable insights for traders. Sources should be diverse and not from one source. Include citations for your sources and number them sequentially. Format the response in clear paragraphs with proper spacing. Prioritize clarity, urgency, and immediate tradable insights. Use a sharp, direct voice that cuts through noise, think financial journalism meets street-smart trading floor. Avoid academic language; speak directly to traders bottom-line interests. Highlight potential opportunities and risks in a way that feels like insider knowledge, not generic reporting. Do not refer to the daily market as “todays market”—refer to it as “the market.” Only use information that is current as of the time of this request; do not include outdated or speculative data.'
                 }
-              ]
+              ],
+              search_domain_filter: DOMAIN_FILTER
             }),
             signal: controller.signal,
           }
