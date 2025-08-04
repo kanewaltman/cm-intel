@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Newspaper, RefreshCcw, AlertCircle, TrendingUp, Link, Moon, Sun, MoreVertical, Sparkles, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { RefreshCcw, Moon, Sun, MoreVertical, Sparkles, ChevronDown } from 'lucide-react';
 import { CryptoToken } from './components/CryptoToken';
-import { supabase, fetchWithErrorHandling } from './lib/supabase';
-import { format, parseISO, isToday, startOfDay, isSameDay, addDays } from 'date-fns';
-import type { Database } from './lib/database.types';
+import { supabase } from './lib/supabase';
+import { format, parseISO, startOfDay, addDays } from 'date-fns';
+
 import type { Citation } from './lib/database.types';
 import { config } from './lib/config';
 import { createPerplexity } from '@ai-sdk/perplexity';
@@ -57,7 +57,7 @@ const FALLBACK_DATA: NewsDigest = {
 
 function App() {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
   const [newsDigest, setNewsDigest] = useState<NewsDigest | null>(null);
   const [historicalDigests, setHistoricalDigests] = useState<NewsDigest[]>([]);
   const [retryCount, setRetryCount] = useState(0);
@@ -65,7 +65,7 @@ function App() {
     const savedTheme = localStorage.getItem('theme');
     return savedTheme === null ? true : savedTheme === 'dark';
   });
-  const [usingFallback, setUsingFallback] = useState(false);
+  const [, setUsingFallback] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [marketSentiment, setMarketSentiment] = useState<MarketSentiment>('neutral');
@@ -656,13 +656,13 @@ function App() {
     
     Object.entries(groupedPositiveMatches).forEach(([category, matches]) => {
       console.log(`  [${category}] (${matches.length}):`);
-      matches.forEach((match, i) => console.log(`    - ${match}`));
+      matches.forEach((match) => console.log(`    - ${match}`));
     });
     
     console.log(`Negative indicators found: ${negativeCount}`);
     Object.entries(groupedNegativeMatches).forEach(([category, matches]) => {
       console.log(`  [${category}] (${matches.length}):`);
-      matches.forEach((match, i) => console.log(`    - ${match}`));
+      matches.forEach((match) => console.log(`    - ${match}`));
     });
     
     // Only store sentiment details for UI display if not just logging
