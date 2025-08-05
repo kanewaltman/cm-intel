@@ -58,22 +58,19 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Check if summary already exists for today
-    const today = new Date()
-    today.setUTCHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
+    // Check if summary already exists in the last 6 hours
+    const now = new Date()
+    const sixHoursAgo = new Date(now.getTime() - (6 * 60 * 60 * 1000))
 
-    console.log('Checking for existing summary between:', {
-      fromDate: today.toISOString(),
-      toDate: tomorrow.toISOString()
+    console.log('Checking for existing summary since:', {
+      fromDate: sixHoursAgo.toISOString(),
+      currentTime: now.toISOString()
     })
 
     const { data: existingSummary, error: checkError } = await supabase
       .from('daily_summaries')
       .select('*')
-      .gte('timestamp', today.toISOString())
-      .lt('timestamp', tomorrow.toISOString())
+      .gte('timestamp', sixHoursAgo.toISOString())
       .order('timestamp', { ascending: false })
       .limit(1)
 
@@ -85,11 +82,11 @@ serve(async (req) => {
     }
 
     if (existingSummary && existingSummary.length > 0) {
-      console.log('Summary already exists for today:', existingSummary[0].timestamp)
+      console.log('Summary already exists within the last 6 hours:', existingSummary[0].timestamp)
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'Summary already exists for today',
+          message: 'Summary already exists within the last 6 hours',
           summary: existingSummary[0]
         }),
         { 
