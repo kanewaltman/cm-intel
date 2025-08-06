@@ -121,19 +121,62 @@ serve(async (req) => {
     console.log('Received response from Perplexity API')
     console.log('Sources from API:', apiSources)
 
+    // Helper function to extract domain name from URL
+    const getDomainName = (url: string): string => {
+      try {
+        if (!url || url === '#') return 'Unknown Source';
+        
+        // Handle URLs that might not have protocol
+        const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+        const urlObj = new URL(fullUrl);
+        
+        // Extract the domain without 'www.'
+        let domain = urlObj.hostname.replace(/^www\./, '');
+        
+        // Capitalize first letter for display
+        return domain.charAt(0).toUpperCase() + domain.slice(1);
+      } catch (error) {
+        console.error('Error parsing URL:', url, error);
+        return 'Unknown Source';
+      }
+    };
+
+    // Helper function to get favicon
+    const getFavicon = async (url: string): Promise<string> => {
+      try {
+        if (!url || url === '#') return '';
+        
+        // Ensure URL has protocol
+        const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+        const urlObj = new URL(fullUrl);
+        const domain = urlObj.hostname;
+        
+        // Use Google's favicon service
+        return `https://www.google.com/s2/favicons?domain=${domain}`;
+      } catch (error) {
+        console.error('Error getting favicon for URL:', url, error);
+        return '';
+      }
+    };
+
     // Process the response and create citations
     const citations: Citation[] = []
     
     if (apiSources && Array.isArray(apiSources)) {
-      apiSources.forEach((source: any, index: number) => {
+      for (let index = 0; index < apiSources.length; index++) {
+        const source = apiSources[index];
+        const url = source.url || '#';
+        const title = source.title || getDomainName(url);
+        const favicon = await getFavicon(url);
+        
         citations.push({
           number: index + 1,
-          title: source.title || `Source ${index + 1}`,
-          url: source.url || '#',
+          title: title,
+          url: url,
           isCited: true,
-          favicon: source.favicon || ''
-        })
-      })
+          favicon: favicon
+        });
+      }
     }
 
     // Validate that we have citations - empty citations indicate corrupted response

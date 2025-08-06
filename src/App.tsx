@@ -264,13 +264,16 @@ function App() {
           digest.citations = [];
         }
         
-        // Add in any missing properties to citation objects
+        // Add in any missing properties to citation objects, but preserve existing good data
         digest.citations = digest.citations.map((citation: any) => {
           return {
             number: citation.number || 0,
-            title: citation.title || `Source ${citation.number || 0}`,
+            // Only use fallback title if no title exists or if title is already a generic "Source X" format
+            title: (citation.title && citation.title.trim() && !citation.title.match(/^Source \d+$/)) 
+              ? citation.title 
+              : (citation.title || getDomainName(citation.url || '#')),
             url: citation.url || '#',
-            isCited: true,
+            isCited: citation.isCited !== undefined ? citation.isCited : true,
             favicon: citation.favicon || ''
           };
         });
@@ -388,7 +391,10 @@ function App() {
         // Add 1 to index because citation numbers typically start at 1
         const number = i + 1;
         const url = source.url || "";
-        const title = source.title || getDomainName(url);
+        // Use source.title if available, otherwise fall back to domain name
+        const title = (source.title && source.title.trim() && source.title !== `Source ${number}`) 
+          ? source.title 
+          : getDomainName(url);
         const favicon = await getFavicon(url);
         
         citations.push({
