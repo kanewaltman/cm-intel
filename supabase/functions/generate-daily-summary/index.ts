@@ -136,6 +136,12 @@ serve(async (req) => {
       })
     }
 
+    // Validate that we have citations - empty citations indicate corrupted response
+    if (!citations || citations.length === 0) {
+      console.error('Invalid response from Perplexity API: no citations found')
+      throw new Error('Invalid response from Perplexity API: citations are empty or corrupted')
+    }
+
     // Create the digest
     const digest: NewsDigest = {
       content: generatedText,

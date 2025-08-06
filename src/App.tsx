@@ -151,8 +151,14 @@ function App() {
       }
 
       if (data && data.length > 0) {
-        console.log('Found today\'s summary:', data[0].timestamp);
-        return data[0];
+        // Validate that the summary has citations (not corrupted)
+        const summary = data[0];
+        if (!summary.citations || summary.citations.length === 0) {
+          console.warn('Found summary with empty citations (corrupted), treating as invalid');
+          return null;
+        }
+        console.log('Found today\'s summary:', summary.timestamp);
+        return summary;
       }
       
       console.log('No summary found for today');
@@ -161,6 +167,32 @@ function App() {
       console.error('Error checking today\'s summary:', err);
       return null;
     }
+  };
+
+  const callEdgeFunction = async (): Promise<NewsDigest> => {
+    console.log('Calling Edge Function for summary generation...');
+    
+    const { data, error } = await supabase.functions.invoke('generate-daily-summary', {
+      body: {},
+    });
+
+    if (error) {
+      console.error('Edge Function error:', error);
+      throw new Error(`Edge Function failed: ${error.message}`);
+    }
+
+    if (!data || !data.success) {
+      throw new Error('Edge Function returned unsuccessful response');
+    }
+
+    const summary = data.summary;
+    
+    // Validate that the returned summary has citations
+    if (!summary.citations || summary.citations.length === 0) {
+      throw new Error('Edge Function returned summary with empty citations (corrupted)');
+    }
+
+    return summary;
   };
 
   const getCachedData = (): NewsDigest | null => {
@@ -485,6 +517,12 @@ function App() {
       .replace(/\*\*/g, '') // Remove bold formatting
       .replace(/^\d+\.\s+/gm, '') // Remove numbered list formatting
       .replace(/\n+/g, '\n\n'); // Normalize paragraph breaks
+
+    // Validate that we have citations - empty citations indicate corrupted response
+    if (!citations || citations.length === 0) {
+      console.error('Invalid response from Perplexity API: no citations found');
+      throw new Error('Invalid response from Perplexity API: citations are empty or corrupted');
+    }
 
     const digest: NewsDigest = {
       content: processedContent,
@@ -937,9 +975,51 @@ function App() {
     });
   };
 
-  const handleForceGenerate = () => {
+  const handleForceGenerate = async () => {
     setShowMenu(false);
-    fetchNewsDigest(true);
+    setLoading(true);
+    setError(null);
+    
+    const maxRetries = 3;
+    let attempt = 0;
+    
+    while (attempt < maxRetries) {
+      attempt++;
+      console.log(`Force generate attempt ${attempt}/${maxRetries}`);
+      
+      try {
+        // Try using the Edge Function first for better reliability
+        const summary = await callEdgeFunction();
+        
+        setNewsDigest(summary);
+        setCachedData(summary);
+        setMarketSentiment(analyzeMarketSentiment(summary.content));
+        setRetryCount(0);
+        setUsingFallback(false);
+        setLoading(false);
+        return;
+      } catch (edgeError) {
+        console.error(`Edge Function attempt ${attempt} failed:`, edgeError);
+        
+        // If it's the last attempt or a corrupted response, try direct API as fallback
+        const errorMessage = edgeError instanceof Error ? edgeError.message : String(edgeError);
+        if (attempt === maxRetries || errorMessage.includes('empty citations')) {
+          console.log('Falling back to direct API call...');
+          try {
+            await fetchNewsDigest(true);
+            return;
+          } catch (fallbackError) {
+            console.error('Fallback also failed:', fallbackError);
+            setError(`Failed to generate summary after ${maxRetries} attempts. Please try again later.`);
+            setLoading(false);
+            return;
+          }
+        }
+        
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+      }
+    }
   };
 
   const renderDigest = (digest: NewsDigest) => {
